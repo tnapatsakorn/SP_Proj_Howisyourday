@@ -61,7 +61,6 @@ try:
         print(ERROR_MSG)
         raise SystemExit
 
-    # y/n อย่างง่าย
     bf = bf.strip().lower()
     lu = lunch.strip().lower()
     di = dinner.strip().lower()
@@ -109,7 +108,7 @@ try:
         meal_grade = 'ไม่ดี'
 
     meal_msg = meal_text[cnt]
-
+    # ประเมินระหว่างวัน
     if day_h in (0,1,2,3):
         day_grade = 'น้อยมาก'; day_msg = day_text['zero_to_three']
     elif day_h <= 13:
@@ -142,8 +141,6 @@ try:
             'message': day_msg
         }
     ]
-
-    # แสดงผล
     print("\n--- Result ---")
 
     print(f"สรุปเวลานอน: {sleep_h} ชั่วโมง")
