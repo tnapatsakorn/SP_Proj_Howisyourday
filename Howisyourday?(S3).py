@@ -25,7 +25,6 @@ day_text = {
 ERROR_MSG = "Error: Unknown data. Please, you better go to sleep."
 
 def parse_hhmm(s):
-    """รับรูปแบบ 'H' หรือ 'HH:MM' -> นับเป็นนาทีตั้งแต่ 00:00 (0..1439), ผิดรูปแบบคืน None"""
     try:
         s = s.strip()
         if ':' not in s:
