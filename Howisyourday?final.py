@@ -72,6 +72,18 @@ def parabolic_score(x, center, max_dev):
     s = 100 * (1 - ((x - center) / max_dev) ** 2)
     return max(0, min(100, s))
 
+def minutes_to_hhmm(mins: int) -> str:
+    """แปลงนาที (0..1439) -> 'HH:MM'"""
+    mins = int(mins)
+    h = mins // 60
+    m = mins % 60
+    return f"{h:02d}:{m:02d}"
+
+def hhmm_to_minutes(hhmm: str) -> int:
+    """แปลง 'HH:MM' -> นาที (0..1439)"""
+    h, m = hhmm.split(":")
+    return int(h)*60 + int(m)
+
 # ---------- UI ----------
 st.title("Good Morning")
 
@@ -98,9 +110,16 @@ with st.container():
     di = st.checkbox("Dinner", value=True)
 
     st.markdown('<div class="hr"></div>', unsafe_allow_html=True)
-    day_h = st.slider("ใช้ชีวิตวันนี้กี่ชั่วโมง (0–24)", 0.0, 24.0, 12.0, 0.5)
+
+    time_options = [f"{h:02d}:{m:02d}" for h in range(24) for m in range(60)]  # 1440 ค่า
+    day_time_str = st.select_slider(
+        "ใช้ชีวิตวันนี้ (เลือกเวลาแบบ HH:MM)",
+        options=time_options,
+        value="12:00",
+        help="เลื่อนเพื่อเลือกเวลาใน 1 วันตั้งแต่ 00:00 ถึง 23:59"
+    )
     st.markdown(
-        '<p class="small-hint">หมายเหตุ: ใช้ชีวิต = ชั่วโมงกิจกรรมรวมทั้งวัน (ไม่รวมเวลานอน)</p>',
+        f'<p class="small-hint">เลือกไว้: <b>{day_time_str}</b></p>',
         unsafe_allow_html=True
     )
 
@@ -116,9 +135,12 @@ if submitted:
             st.error("รูปแบบเวลาผิด: ใส่แบบ 23:45 หรือ 2345 หรือ 23")
             st.stop()
 
-        if not (0 <= day_h <= 24):
+        # แปลงเวลาที่เลือกจาก HH:MM -> นาที (0..1439) แล้วเป็นชั่วโมงทศนิยม
+        day_minutes = hhmm_to_minutes(day_time_str)
+        if not (0 <= day_minutes <= 24*60 - 1):
             st.error(ERROR_MSG)
             st.stop()
+        day_h = round(day_minutes / 60, 2)
 
         # ---- คำนวณเวลานอน ----
         sleep_min = calc_sleep_minutes(bed_min, wake_min)
@@ -162,7 +184,7 @@ if submitted:
         meal_msg = meal_text[cnt]
 
         # ---- ชั่วโมงการใช้ชีวิต ----
-        if day_h in (0, 1, 2, 3):
+        if day_h <= 3:
             day_grade = 'น้อยมาก'
             day_msg = day_text['zero_to_three']
         elif day_h <= 13:
@@ -210,7 +232,7 @@ if submitted:
             penalty += 15
         if cnt <= 1:
             penalty += 15
-        if day_h in (0, 1, 2, 3) or day_h > 18:
+        if day_h <= 3 or day_h > 18:
             penalty += 15
 
         balance_score = max(0, round(balance_raw - penalty, 1))
@@ -230,14 +252,14 @@ if submitted:
         st.write(f"**สรุปเวลานอน:** {sleep_h} ชั่วโมง")
         m1, m2, m3 = st.columns(3)
         with m1:
-            st.metric("Sleeping", f"{sleep_grade}")  # เอา help ออก
-            st.caption(sleep_msg)                    # แสดงข้อความใต้ metric
+            st.metric("Sleeping", f"{sleep_grade}")
+            st.caption(sleep_msg)
         with m2:
             st.metric("Meals (มื้อ)", f"{cnt} ({meal_grade})")
             st.caption(meal_msg)
         with m3:
             st.metric("Daytime (ชม.)", f"{day_h:.2f} ({day_grade})")
-            st.caption(day_msg)
+            st.caption(f"{day_msg} — เลือกไว้: {day_time_str}")
         st.success(f"Summary: {overall}")
         st.markdown('</div>', unsafe_allow_html=True)
 
