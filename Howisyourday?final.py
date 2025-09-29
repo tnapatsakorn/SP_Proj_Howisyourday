@@ -260,7 +260,7 @@ if submitted:
             st.caption(meal_msg)
         with m3:
             st.metric("Daytime", f"{day_hhmm_text} ({day_grade})")
-            st.caption(f"{day_msg} — เลือกไว้: {day_time_str} = {day_minutes} นาที")
+            st.caption(f"{day_msg}")
 
         st.success(f"Summary: {overall}")
         st.markdown('</div>', unsafe_allow_html=True)
