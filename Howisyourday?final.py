@@ -42,17 +42,16 @@ day_text = {
 }
 ERROR_MSG = "Error: Unknown data. Please, you better go to sleep."
 
-# ---------- HELPERS ----------
+# WrongCase
 def parse_hhmm(s: str):
-    """รับ '23:45' หรือ '2345' หรือ '23' แล้วคืนค่านาทีตั้งแต่ 00:00 (0..1439) หรือ None ถ้าผิดรูปแบบ"""
     try:
         s = s.strip()
         if ":" in s:
             h, m = s.split(":")
         elif s.isdigit() and len(s) in (3, 4):
-            h, m = s[:-2], s[-2:]        # 930 -> 9:30 / 2345 -> 23:45
+            h, m = s[:-2], s[-2:]        
         else:
-            h, m = s, "0"                # '23' -> 23:00
+            h, m = s, "0"               
         h, m = int(h), int(m)
         if not (0 <= h < 24 and 0 <= m < 60):
             return None
@@ -73,8 +72,8 @@ def parabolic_score(x, center, max_dev):
     return max(0, min(100, s))
 
 def minutes_to_hhmm(mins: int) -> str:
-    """แปลงนาที (0..1439) -> 'HH:MM'"""
-    mins = int(mins)
+    """แปลงนาที (>=0) -> 'HH:MM' (ชั่วโมงสะสม ไม่ mod 24)"""
+    mins = int(max(0, mins))
     h = mins // 60
     m = mins % 60
     return f"{h:02d}:{m:02d}"
@@ -84,7 +83,18 @@ def hhmm_to_minutes(hhmm: str) -> int:
     h, m = hhmm.split(":")
     return int(h)*60 + int(m)
 
-# ---------- UI ----------
+def format_duration(total_minutes: int) -> str:
+    """คืน 'X ชม. YY นาที' โดยนาที 00-59 (ถ้า 60 เด้งเป็น +1 ชม.)"""
+    if total_minutes < 0:
+        total_minutes = 0
+    h = total_minutes // 60
+    m = total_minutes % 60
+    if m == 60:
+        h += 1
+        m = 0
+    return f"{h} ชม. {m:02d} นาที"
+
+# UI
 st.title("Good Morning")
 
 with st.container():
@@ -94,16 +104,14 @@ with st.container():
     with cA:
         bed_str = st.text_input(
             "เวลาเข้านอน",
-            value="23:00",
-            help="พิมพ์ได้หลายแบบ: 23:45, 2345, 23 (=23:00)"
+            value="22:45"
         )
         bf = st.checkbox("Breakfast", value=True)
 
     with cB:
         wake_str = st.text_input(
             "เวลาตื่น",
-            value="07:00",
-            help="พิมพ์ได้หลายแบบ: 07:10, 710, 7 (=07:00)"
+            value="07:33"
         )
         lu = st.checkbox("Lunch", value=True)
 
@@ -111,12 +119,12 @@ with st.container():
 
     st.markdown('<div class="hr"></div>', unsafe_allow_html=True)
 
-    time_options = [f"{h:02d}:{m:02d}" for h in range(24) for m in range(60)]  # 1440 ค่า
+    time_options = [f"{h:02d}:{m:02d}" for h in range(24) for m in range(60)]
     day_time_str = st.select_slider(
-        "ใช้ชีวิตวันนี้ (เลือกเวลาแบบ HH:MM)",
+        "ระยะเวลาใช้ชีวิตวันนี้",
         options=time_options,
         value="12:00",
-        help="เลื่อนเพื่อเลือกเวลาใน 1 วันตั้งแต่ 00:00 ถึง 23:59"
+        help="เลื่อนเพื่อเลือกเวลาที่ใช้ใน 1 วัน ตั้งแต่ 00:00 ถึง 23:59"
     )
     st.markdown(
         f'<p class="small-hint">เลือกไว้: <b>{day_time_str}</b></p>',
@@ -129,68 +137,58 @@ with st.container():
 if submitted:
     try:
         bed_min = parse_hhmm(bed_str)
-        wake_min = parse_hhmm(wake_str)
+        wake_min_of_day = parse_hhmm(wake_str)
 
-        if bed_min is None or wake_min is None:
+        if bed_min is None or wake_min_of_day is None:
             st.error("รูปแบบเวลาผิด: ใส่แบบ 23:45 หรือ 2345 หรือ 23")
             st.stop()
 
-        # แปลงเวลาที่เลือกจาก HH:MM -> นาที (0..1439) แล้วเป็นชั่วโมงทศนิยม
-        day_minutes = hhmm_to_minutes(day_time_str)
-        if not (0 <= day_minutes <= 24*60 - 1):
-            st.error(ERROR_MSG)
-            st.stop()
-        day_h = round(day_minutes / 60, 2)
+        #เวลาใช้ชีวิต (นาที)
+        day_minutes = hhmm_to_minutes(day_time_str)  # 0..1439
+        day_h_float = day_minutes / 60.0
+        day_hhmm_text = format_duration(day_minutes)
 
-        # ---- คำนวณเวลานอน ----
-        sleep_min = calc_sleep_minutes(bed_min, wake_min)
-        sleep_h = round(sleep_min / 60, 2)
+        #เวลานอน(นาที)
+        sleep_min = calc_sleep_minutes(bed_min, wake_min_of_day)
+        sleep_h_float = sleep_min / 60.0
+        sleep_hhmm_text = format_duration(sleep_min)
 
-        # ---- จัดเกรดการนอน ----
+        #จัดเกรดการนอน
         if sleep_min == 0:
             sleep_grade = 'ไม่ได้นอน'
             sleep_msg = sleep_text['none']
-        elif 8 <= sleep_h <= 9:
+        elif 8 <= sleep_h_float <= 9:
             sleep_grade = 'สมบูรณ์'
             sleep_msg = sleep_text['perfect']
-        elif 6 <= sleep_h < 8:
+        elif 6 <= sleep_h_float < 8:
             sleep_grade = 'ดี'
             sleep_msg = sleep_text['good']
-        elif 4 <= sleep_h < 6:
+        elif 4 <= sleep_h_float < 6:
             sleep_grade = 'พอใช้'
             sleep_msg = sleep_text['fair']
-        elif sleep_h > 9:
+        elif sleep_h_float > 9:
             sleep_grade = 'นอนเยอะเกินไป'
             sleep_msg = sleep_text['over']
-        elif 0 < sleep_h < 4:
+        elif 0 < sleep_h_float < 4:
             sleep_grade = 'แย่'
             sleep_msg = sleep_text['poor']
         else:
             sleep_grade = 'กลางๆ'
             sleep_msg = '-'
 
-        # ---- จำนวนมื้ออาหาร ----
+        #จำนวนมื้ออาหาร
         cnt = (1 if bf else 0) + (1 if lu else 0) + (1 if di else 0)
-
-        if cnt == 3:
-            meal_grade = 'ดี'
-        elif cnt == 2:
-            meal_grade = 'พอใช้'
-        elif cnt == 1:
-            meal_grade = 'ไม่เพียงพอ'
-        else:
-            meal_grade = 'ไม่ดี'
-
+        meal_grade = {3: 'ดี', 2: 'พอใช้', 1: 'ไม่เพียงพอ', 0: 'ไม่ดี'}[cnt]
         meal_msg = meal_text[cnt]
 
-        # ---- ชั่วโมงการใช้ชีวิต ----
-        if day_h <= 3:
+        #ชั่วโมงการใช้ชีวิต
+        if day_h_float <= 3:
             day_grade = 'น้อยมาก'
             day_msg = day_text['zero_to_three']
-        elif day_h <= 13:
+        elif day_h_float <= 13:
             day_grade = '<=13 ชม.'
             day_msg = day_text['le13']
-        elif day_h > 18:
+        elif day_h_float > 18:
             day_grade = '>18 ชม.'
             day_msg = day_text['gt18']
         else:
@@ -214,42 +212,45 @@ if submitted:
         elif day_grade == '>18 ชม.':
             score += 1
 
-        if score >= 3:
-            overall = "โดยรวมสำหรับวันนี้ดีมาก "
-        elif score >= 2:
-            overall = "อยู่ในเกณฑ์พอใช้ "
-        else:
-            overall = "อยู่ในเกณฑ์ที่ค่อนข้างแย่ ต้องปรับเปลี่ยนพฤติกรรม"
+        overall = (
+            "โดยรวมสำหรับวันนี้ดีมาก "
+            if score >= 3 else
+            "อยู่ในเกณฑ์พอใช้ " if score >= 2
+            else "อยู่ในเกณฑ์ที่ค่อนข้างแย่ ต้องปรับเปลี่ยนพฤติกรรม"
+        )
 
         # ---- balance score ----
-        sleep_score = parabolic_score(sleep_h, center=8,  max_dev=4)
-        day_score   = parabolic_score(day_h,   center=12, max_dev=6)
-        meal_score  = {3: 100, 2: 70, 1: 35, 0: 0}.get(cnt, 0)
+        sleep_score = parabolic_score(sleep_h_float, center=8,  max_dev=4)
+        day_score   = parabolic_score(day_h_float,   center=12, max_dev=6)
+        meal_score  = {3: 100, 2: 70, 1: 35, 0: 0}[cnt]
 
         balance_raw = (sleep_score + meal_score + day_score) / 3
         penalty = 0
-        if sleep_h < 4 or sleep_h > 11:
+        if sleep_h_float < 4 or sleep_h_float > 11:
             penalty += 15
         if cnt <= 1:
             penalty += 15
-        if day_h <= 3 or day_h > 18:
+        if day_h_float <= 3 or day_h_float > 18:
             penalty += 15
 
         balance_score = max(0, round(balance_raw - penalty, 1))
-
-        if balance_score >= 80:
-            balance_text = "สมดุลดีมาก รักษาแพทเทิร์นนี้ไว้!"
-        elif balance_score >= 60:
-            balance_text = "ค่อนข้างดี ปรับเล็กน้อยให้ดีขึ้นได้อีก"
-        elif balance_score >= 40:
-            balance_text = "พอใช้ ลองลดความสุดโต่งบางอย่างดู"
-        else:
-            balance_text = "ไม่ค่อยสมดุล หาเวลาพัก/กินให้พอ และจัดเวลาใหม่"
+        balance_text = (
+            "สมดุลดีมาก รักษาแพทเทิร์นนี้ไว้!" if balance_score >= 80 else
+            "ค่อนข้างดี ปรับเล็กน้อยให้ดีขึ้นได้อีก" if balance_score >= 60 else
+            "พอใช้ อย่าลืมหาอะไรผ่อนคลาย" if balance_score >= 40 else
+            "ไม่ค่อยสมดุล หาเวลาพัก/กินให้พอ และจัดเวลาใหม่"
+        )
 
         # ---------- OUTPUT ----------
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("ผลลัพธ์")
-        st.write(f"**สรุปเวลานอน:** {sleep_h} ชั่วโมง")
+
+        # สรุปเวลานอน
+        st.write(
+            f"**สรุปเวลานอน:** {sleep_hhmm_text} "
+            f"— จาก {minutes_to_hhmm(bed_min)} ถึง {minutes_to_hhmm(wake_min_of_day)}"
+        )
+
         m1, m2, m3 = st.columns(3)
         with m1:
             st.metric("Sleeping", f"{sleep_grade}")
@@ -258,8 +259,9 @@ if submitted:
             st.metric("Meals (มื้อ)", f"{cnt} ({meal_grade})")
             st.caption(meal_msg)
         with m3:
-            st.metric("Daytime (ชม.)", f"{day_h:.2f} ({day_grade})")
-            st.caption(f"{day_msg} — เลือกไว้: {day_time_str}")
+            st.metric("Daytime", f"{day_hhmm_text} ({day_grade})")
+            st.caption(f"{day_msg} — เลือกไว้: {day_time_str} = {day_minutes} นาที")
+
         st.success(f"Summary: {overall}")
         st.markdown('</div>', unsafe_allow_html=True)
 
